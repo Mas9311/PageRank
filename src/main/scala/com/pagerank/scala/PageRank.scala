@@ -16,9 +16,10 @@ object PageRank {
       .appName("Scala Page Rank")
       .getOrCreate()
 
-    val linesInFile = ss.read.textFile(args(0)).rdd
+    val inputLinks = ss.read.textFile(args(0)).rdd
+    val inputTitles = ss.read.textFile(args(0)).rdd
 
-    val links = linesInFile.map{ s =>
+    val links = inputLinks.map{ s =>
       val parts = s.split("\\s+")
       (parts(0), parts(1))
     }.distinct().groupByKey().cache()
@@ -26,8 +27,8 @@ object PageRank {
     var idealPageRanks = links.mapValues(v => 1.0)
     var taxedPageRanks = links.mapValues(v => 1.0)
     
-    var beta = 0.85
-    var power = 1 - beta
+    val beta = 0.85
+    val power = 1 - beta
     println(s"beta:  ${beta}")
     println(s"power: ${power}")
 
@@ -40,7 +41,7 @@ object PageRank {
       }
       idealPageRanks = contribs.reduceByKey(_ + _).mapValues(_)
       
-      // Now, calculate the taxed page ranks
+      // Next, calculate the taxed page ranks for this iteration
       val contribs = links.join(taxedPageRanks).values.flatMap{ case (urls, rank) =>
           val size = urls.size
           urls.map(url => (url, rank / size))
@@ -49,15 +50,19 @@ object PageRank {
     }
 
     val idealFinalRanks = idealPageRanks.collect()
-    val taxedFinalRanks = taxedPageRanks.collect() // or .coalesce(1)
+    val taxedFinalRanks = taxedPageRanks.collect() // or .coalesce(1) ?
     
     println("Page Ranks (without taxation):")
     idealFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
     
-    println("Page Ranks (with taxation):")
+    println("Ideal Page Ranks with taxation:")
     taxedFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
     
-    // if the file exists, delete it. Write final to textFile.
+    // if output directory exists in hdfs:
+    //   delete it
+    // write final ideal ranks to textFile.
+    // write final taxed ranks to textFile.
+    
     ss.stop()
     
   }
