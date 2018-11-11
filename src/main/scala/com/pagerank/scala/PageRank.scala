@@ -1,44 +1,65 @@
 package com.pagerank.scala
 
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.sql.SparkSession
 
 object PageRank {
 
   def main(args: Array[String]) {
     if (args.length < 1) {
-      System.err.println("Usage: SparkPageRank <file>")
+      System.err.println("Usage: PageRank </path/to/links.txt> </path/to/titles.txt>")
       System.exit(1)
     }
 
-    val spark = SparkSession
+    val ss = SparkSession
       .builder
-      .appName("Spark Ideal PageRank")
+      .appName("Scala Page Rank")
       .getOrCreate()
 
-    val lines = spark.read.textFile(args(0)).rdd
+    val linesInFile = ss.read.textFile(args(0)).rdd
 
-    val links = lines.map{ s =>
+    val links = linesInFile.map{ s =>
       val parts = s.split("\\s+")
       (parts(0), parts(1))
     }.distinct().groupByKey().cache()
-    var ranks = links.mapValues(v => 1.0)
+    
+    var idealPageRanks = links.mapValues(v => 1.0)
+    var taxedPageRanks = links.mapValues(v => 1.0)
+    
+    var beta = 0.85
+    var power = 1 - beta
+    println(s"beta:  ${beta}")
+    println(s"power: ${power}")
 
+    // minimum of 25 iterations recommended (until the vector converges)
     for (i <- 1 to 25) {
-      val contribs = links.join(ranks).values.flatMap{ case (urls, rank) =>
+      // First, calculate ideal page ranks (without taxation)
+      val contribs = links.join(idealPageRanks).values.flatMap{ case (urls, rank) =>
           val size = urls.size
           urls.map(url => (url, rank / size))
       }
-      ranks = contribs.reduceByKey(_ + _)
-//      with taxation:
-//      ranks = contribs.reduceByKey(_ + _).mapValues(0.15 + 0.85 * _)
+      idealPageRanks = contribs.reduceByKey(_ + _).mapValues(_)
+      
+      // Now, calculate the taxed page ranks
+      val contribs = links.join(taxedPageRanks).values.flatMap{ case (urls, rank) =>
+          val size = urls.size
+          urls.map(url => (url, rank / size))
+      }
+      taxedPageRanks = contribs.reduceByKey(_ + _).mapValues(_ * beta + power)
     }
 
-    val finalRank = ranks.collect()
-
-    finalRank.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
-
-    spark.stop()
-
+    val idealFinalRanks = idealPageRanks.collect()
+    val taxedFinalRanks = taxedPageRanks.collect() // or .coalesce(1)
+    
+    println("Page Ranks (without taxation):")
+    idealFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
+    
+    println("Page Ranks (with taxation):")
+    taxedFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
+    
+    // if the file exists, delete it. Write final to textFile.
+    ss.stop()
+    
   }
 
 }
