@@ -17,7 +17,7 @@ object PageRank {
       .getOrCreate()
 
     val inputLinks = ss.read.textFile(args(0)).rdd
-    val inputTitles = ss.read.textFile(args(0)).rdd
+    val inputTitles = ss.read.textFile(args(1)).rdd
 
     val links = inputLinks.map{ s =>
       val parts = s.split("\\s+")
@@ -52,11 +52,23 @@ object PageRank {
     val idealFinalRanks = idealPageRanks.collect()
     val taxedFinalRanks = taxedPageRanks.collect() // or .coalesce(1) ?
     
+     println(s"*******************************************************************************************************")
+
     println("Page Ranks (without taxation):")
     idealFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
     
     println("Ideal Page Ranks with taxation:")
     taxedFinalRanks.foreach(tup => println(s"${tup._1} has rank:  ${tup._2} ."))
+    println(s"*******************************************************************************************************")
+
+//    val sc = spark.sparkContext
+//
+//    val fs = FileSystem.get(sc.hadoopConfiguration)
+//    val outputPath = "hdfs://phoenix:30381/output"
+//    if(fs.exists(new Path(outputPath)))
+//      fs.delete(new Path(outputPath),true)
+//    ranks.collect().foreach(tup => println(s"${tup._1}:  ${tup._2}"))
+//    ranks.saveAsTextFile(outputPath)
     
     // if output directory exists in hdfs:
     //   delete it
