@@ -1,5 +1,6 @@
 package com.pagerank.scala
 
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
 
@@ -54,58 +55,45 @@ object PageRank {
       }
       taxedPageRanks = taxedContribs.reduceByKey(_ + _).mapValues(power + beta * _)
     }
-//
-//    val numericalOrderIdeal = idealPageRanks.takeOrdered(idealPageRanks.count.toInt)(Ordering[String].reverse.on(x => x._1))
-//    val numericalOrderTaxed = taxedPageRanks.takeOrdered(taxedPageRanks.count.toInt)(Ordering[String].reverse.on(x => x._1))
-//
-//    println("    Ideal")
-//    numericalOrderIdeal.foreach(tup => println(s"${tup._1} \t${tup._2}"))
-//    println()
-//    println("    Taxed")
-//    numericalOrderTaxed.foreach(tup => println(s"${tup._1} \t${tup._2}"))
 
-    val indexedTitles = inputTitles.zipWithIndex.map{ x =>
-      (x._2 + 1, x._1) }
-
-    val z = indexedTitles.map { case (index, title) => (index.toInt, title)}
-    val i = idealPageRanks.map { case (index, rank) => (index.toInt, rank)}
-    val t = idealPageRanks.map { case (index, rank) => (index.toInt, rank)}
-
-    val joinedIdeal = z.fullOuterJoin(i).map {
-      case (title, rank) => (title, rank)
-    }
-    joinedIdeal.foreach(println)
-
-    val joinedTaxed = z.fullOuterJoin(i).map {
-      case (title, rank) => (title, rank)
-    }
-    joinedTaxed.foreach(println)
+    val indexedTitles = inputTitles.zipWithIndex.map{ x => ((x._2 + 1).toInt, x._1) }
+    val i = idealPageRanks.map { x => (x._1.toInt, x._2) }
+    val t = taxedPageRanks.map { x => (x._1.toInt, x._2) }
 
     var topN = 10
     if (idealPageRanks.count.toInt < topN)
       topN = idealPageRanks.count.toInt
 
-    val orderedIdeal = idealPageRanks.takeOrdered(topN)(Ordering[Double].reverse.on(x => x._2))
-    val orderedTaxed = taxedPageRanks.takeOrdered(topN)(Ordering[Double].reverse.on(x => x._2))
+    val sc = ss.sparkContext
+
+    // Make index values based on the line number in the titles file
+    val topIdeal = i.takeOrdered(topN)(Ordering[Double].reverse.on(x => x._2))
+    val topTaxed = t.takeOrdered(topN)(Ordering[Double].reverse.on(x => x._2))
+
+
+    val joinedIdeal = sc.parallelize(topIdeal).join(indexedTitles).map { x => (x._2._2, x._2._1) }
+    val joinedTaxed = sc.parallelize(topTaxed).join(indexedTitles).map { x => (x._2._2, x._2._1) }
+
+    val finalIdeal = joinedIdeal.sortBy(-_._2)
+    val finalTaxed = joinedTaxed.sortBy(-_._2)
 
     println(s"***************************************************************")
     println("\tIdeal Page Ranks (without taxation):")
-    orderedIdeal.foreach(tup => println(s"${tup._1} has rank\t${tup._2}"))
+    finalIdeal.foreach(tup => println(s"${tup._1}:\t${tup._2}"))
 
     println("\n\tPage Ranks with taxation:")
-    orderedTaxed.foreach(tup => println(s"${tup._1} has rank\t${tup._2}"))
+    finalTaxed.foreach(tup => println(s"${tup._1}:\t${tup._2}"))
     println(s"***************************************************************")
-//
-//    val sc = ss.sparkContext
-//    val fs = FileSystem.get(sc.hadoopConfiguration)
-//    val outputPath = "hdfs://phoenix:30381/output"
-//
-//    if(fs.exists(new Path(outputPath)))
-//      fs.delete(new Path(outputPath),true)
-//
-//    orderedIdeal.coalesce(1).saveAsTextFile(outputPath + "/t")
-//    orderedTaxed.coalesce(1).saveAsTextFile(outputPath + "/i")
-    
+
+    val fs = FileSystem.get(sc.hadoopConfiguration)
+    val outputPath = "hdfs://phoenix:30381/output"
+
+    if(fs.exists(new Path(outputPath)))
+      fs.delete(new Path(outputPath),true)
+
+    finalIdeal.coalesce(1).saveAsTextFile(outputPath + "/t")
+    finalTaxed.coalesce(1).saveAsTextFile(outputPath + "/i")
+
     ss.stop()
     
   }
