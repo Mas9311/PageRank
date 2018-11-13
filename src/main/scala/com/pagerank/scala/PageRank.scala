@@ -23,6 +23,7 @@ object PageRank {
     val ss = SparkSession
       .builder
       .appName("Scala Page Rank")
+      .config("spark.master", "spark://phoenix:30398")
       .getOrCreate()
 
     val inputLinks = ss.read.textFile(args(0)).rdd
@@ -91,8 +92,8 @@ object PageRank {
     if(fs.exists(new Path(outputPath)))
       fs.delete(new Path(outputPath),true)
 
-    finalIdeal.coalesce(1).saveAsTextFile(outputPath + "/t")
-    finalTaxed.coalesce(1).saveAsTextFile(outputPath + "/i")
+    finalIdeal.saveAsTextFile(outputPath + "/t")
+    finalTaxed.saveAsTextFile(outputPath + "/i")
 
     ss.stop()
     
